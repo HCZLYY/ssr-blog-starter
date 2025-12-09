@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Admin — 文章管理</title>
+
+    <!-- 你已有的 admin.css（若路径不同请调整） -->
+    <link rel="stylesheet" href="/admin.css" />
+
+    <style>
+        /* 最小样式，保证表格可读 */
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+        }
+
+        .toolbar {
+            margin-bottom: 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            padding: 6px;
+            box-sizing: border-box;
+        }
+
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+
+        .admin-table th,
+        .admin-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        #admin-status {
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .small {
+            width: 80px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>文章管理</h1>
+
+    <!-- 状态（client/admin.js 会写入） -->
+    <div id="admin-status">准备就绪</div>
+
+    <!-- 简单分页 / 每页控制 -->
+    <div class="toolbar">
+        <div class="controls">
+            页面 <input id="admin-page" class="small" type="number" value="1" min="1" />
+            每页 <select id="admin-perpage" class="small">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+            </select>
+            <button id="admin-load-btn">加载文章</button>
+        </div>
+
+    </div>
+
+    <hr />
+
+    <!-- 新增 / 编辑 区 -->
+    <section>
+        <h2>新增 / 编辑文章</h2>
+
+        <div class="form-row">
+            <div style="flex:1">
+                <label>标题</label>
+                <input id="admin-title" type="text" placeholder="输入标题" />
+            </div>
+            <div style="width:180px">
+                <label>作者</label>
+                <input id="admin-author" type="text" placeholder="作者"
+                    value="<%= typeof ADMIN_USER !== 'undefined' ? ADMIN_USER : '' %>" />
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div style="flex:1">
+                <label>摘要</label>
+                <input id="admin-summary" type="text" placeholder="摘要（可选）" />
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div style="flex:1">
+                <label>正文（HTML）</label>
+                <textarea id="admin-content" rows="6" placeholder="正文内容"></textarea>
+            </div>
+        </div>
+
+        <div style="margin-top:8px; display:flex; gap:8px;">
+            <button id="admin-create-btn">新增文章</button>
+            <button id="admin-reset-btn" type="button">重置</button>
+        </div>
+    </section>
+
+    <hr />
+
+    <!-- 列表区域（client/admin.js 会写入表格） -->
+    <section>
+        <h2>文章列表</h2>
+        <div id="admin-articles-list">
+            <!-- 初始占位 -->
+            <div>正在加载…</div>
+        </div>
+    </section>
+
+    <!-- 加载 client 脚本（确保路径与实际一致） -->
+    <script src="/admin.js"></script>
+</body>
+
+</html>

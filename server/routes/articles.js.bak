@@ -1,0 +1,214 @@
+﻿// server/routes/articles.js
+'use strict';
+
+const express = require('express');
+const router = express.Router();
+const db = require('../lib/db'); // uses execute(sql, params)
+const redis = require('../lib/redis'); // optional cache helper (if present)
+const sanitizeHtml = require('sanitize-html'); // optional: if used anywhere
+
+// helper: safeNumber
+function safeNumber(v, defaultVal = 0) {
+    const n = Number(v);
+    return Number.isFinite(n) && !Number.isNaN(n) ? Math.trunc(n) : defaultVal;
+}
+
+// execSQL wrapper used by routes (keeps logging)
+async function execSQL(sql, params = []) {
+    console.log('[articles] SQL:', sql);
+    console.log('[articles] params:', params);
+    // forward to lib/db.execute which contains LIMIT placeholder compatibility
+    return db.execute(sql, params);
+}
+
+// cache helpers (if you have redis integration). If redis not present, these are no-ops.
+async function getArticleListCache(cacheKey) {
+    try {
+        if (!redis || !redis.get) return null;
+        const v = await redis.get(cacheKey);
+        if (!v) return null;
+        return JSON.parse(v);
+    } catch (e) {
+        console.warn('[articles] cache get error', e && e.message);
+        return null;
+    }
+}
+async function setArticleListCache(cacheKey, value, ttl = 60) {
+    try {
+        if (!redis || !redis.set) return;
+        await redis.set(cacheKey, JSON.stringify(value), ttl);
+    } catch (e) {
+        console.warn('[articles] cache set error', e && e.message);
+    }
+}
+async function clearArticleCache(id) {
+    try {
+        if (!redis || !redis.del) return;
+        // keep keys consistent with your client (the project earlier used certain patterns)
+        await redis.del(`articles:detail:${id}`);
+        // you may want to delete list caches; pattern depends on client queries
+        const keys = await redis.scan ? await redis.scan('0', 'MATCH', 'articles:page*') : [];
+        // best-effort: if redis.del accepts arrays in your wrapper adjust accordingly; here we skip complex logic
+    } catch (e) {
+        // ignore
+    }
+}
+
+/**
+ * GET /api/v1/articles?page=X&limit=Y&kw=keyword
+ * -> list with pagination
+ */
+router.get('/', async (req, res) => {
+    const page = Math.max(1, safeNumber(req.query.page, 1));
+    const limit = Math.max(1, Math.min(200, safeNumber(req.query.limit, 10)));
+    const kw = (req.query.kw || '').toString().trim();
+
+    // cache key pattern example:
+    const cacheKey = `articles:page=${page}:limit=${limit}:kw=${kw || ''}`;
+
+    try {
+        // try cache first (optional)
+        const cached = await getArticleListCache(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
+
+        // total count
+        const countSql = 'SELECT COUNT(*) AS total FROM articles WHERE deleted = 0';
+        const [countRows] = await execSQL(countSql, []);
+        const total = (countRows && countRows[0] && (countRows[0].total || countRows[0].cnt)) ? (countRows[0].total || countRows[0].cnt) : 0;
+
+        // offset calc
+        const offset = (page - 1) * limit;
+
+        // NOTE: to keep compatibility with some mysql2 combinations, we use LIMIT ${limit} OFFSET ${offset}
+        // by using the db layer compatibility patch you could leave placeholders but we keep numeric interpolation
+        const listSql = `SELECT id, title, summary, author, created_at FROM articles WHERE deleted = 0 ORDER BY id DESC LIMIT ${limit} OFFSET ${offset}`;
+        const [items] = await execSQL(listSql, []);
+
+        const resp = {
+            page,
+            limit,
+            total,
+            items: items || []
+        };
+
+        // cache
+        await setArticleListCache(cacheKey, resp, 30);
+
+        res.json(resp);
+    } catch (err) {
+        console.error('[articles] list error:', err && (err.stack || err.message || err));
+        res.status(500).json({ message: 'Internal Server Error', error: err && err.message });
+    }
+});
+
+/**
+ * GET /api/v1/articles/:id
+ */
+router.get('/:id', async (req, res) => {
+    const id = safeNumber(req.params.id, 0);
+    if (!id) return res.status(400).json({ message: 'Invalid id' });
+
+    try {
+        // try cache
+        if (redis && redis.get) {
+            const ck = `articles:detail:${id}`;
+            const cached = await redis.get(ck).catch(() => null);
+            if (cached) {
+                return res.json(JSON.parse(cached));
+            }
+        }
+
+        const sql = 'SELECT id, title, content, summary, author, created_at FROM articles WHERE id = ? AND deleted = 0 LIMIT 1';
+        const [rows] = await execSQL(sql, [id]);
+        const row = (rows && rows[0]) ? rows[0] : null;
+        if (!row) return res.status(404).json({ message: 'Not found' });
+
+        // set cache for detail
+        if (redis && redis.set) {
+            try { await redis.set(`articles:detail:${id}`, JSON.stringify(row), 300); } catch (e) { /* ignore */ }
+        }
+
+        res.json(row);
+    } catch (err) {
+        console.error('[articles] detail error:', err && (err.stack || err.message || err));
+        res.status(500).json({ message: 'Internal Server Error', error: err && err.message });
+    }
+});
+
+/**
+ * POST /api/v1/articles
+ * body: { title, content, summary, author }
+ */
+router.post('/', async (req, res) => {
+    const title = (req.body.title || '').toString().trim();
+    const content = (req.body.content || '').toString();
+    const summary = (req.body.summary || '').toString();
+    const author = (req.body.author || '').toString();
+
+    if (!title) return res.status(400).json({ message: 'title required' });
+
+    try {
+        const sql = 'INSERT INTO articles (title, content, summary, author, created_at, deleted) VALUES (?, ?, ?, ?, NOW(), 0)';
+        const [result] = await execSQL(sql, [title, content, summary, author]);
+        const insertId = result && (result.insertId || result.insert_id) ? (result.insertId || result.insert_id) : null;
+        if (!insertId) return res.status(500).json({ message: 'Insert failed' });
+
+        clearArticleCache(insertId).catch(() => { });
+        res.status(201).json({ id: insertId, title, summary, author });
+    } catch (err) {
+        console.error('[articles] create error:', err && (err.stack || err.message || err));
+        res.status(500).json({ message: 'Internal Server Error', error: err && (err.message || err) });
+    }
+});
+
+/**
+ * PUT /api/v1/articles/:id
+ * body: { title, content, summary, author }
+ */
+router.put('/:id', async (req, res) => {
+    const id = safeNumber(req.params.id, 0);
+    if (!id) return res.status(400).json({ message: 'Invalid id' });
+
+    const title = (req.body.title || '').toString().trim();
+    const content = (req.body.content || '').toString();
+    const summary = (req.body.summary || '').toString();
+    const author = (req.body.author || '').toString();
+
+    if (!title) return res.status(400).json({ message: 'title required' });
+
+    try {
+        const sql = 'UPDATE articles SET title = ?, content = ?, summary = ?, author = ? WHERE id = ? AND deleted = 0';
+        const [result] = await execSQL(sql, [title, content, summary, author, id]);
+        const affected = result && (result.affectedRows || result.affected_rows || result.rowsAffected) ? (result.affectedRows || result.affected_rows || result.rowsAffected) : 0;
+        if (!affected) return res.status(404).json({ message: 'Not found' });
+        clearArticleCache(id).catch(() => { });
+        res.json({ ok: true, id });
+    } catch (err) {
+        console.error('[articles] update error:', err && (err.stack || err.message || err));
+        res.status(500).json({ message: 'Internal Server Error', error: err && (err.message || err) });
+    }
+});
+
+/**
+ * DELETE /api/v1/articles/:id
+ */
+router.delete('/:id', async (req, res) => {
+    const id = safeNumber(req.params.id, 0);
+    if (!id) return res.status(400).json({ message: 'Invalid id' });
+
+    try {
+        const sql = 'DELETE FROM articles WHERE id = ?';
+        const [result] = await execSQL(sql, [id]);
+        const affected = result && (result.affectedRows || result.affected_rows || result.rowsAffected) ? (result.affectedRows || result.affected_rows || result.rowsAffected) : 0;
+        if (!affected) return res.status(404).json({ message: 'Not found' });
+        clearArticleCache(id).catch(() => { });
+        res.json({ ok: true, id });
+    } catch (err) {
+        console.error('[articles] delete error:', err && (err.stack || err.message || err));
+        res.status(500).json({ message: 'Internal Server Error', error: err && (err.message || err) });
+    }
+});
+
+module.exports = router;

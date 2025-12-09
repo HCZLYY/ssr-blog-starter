@@ -465,6 +465,7 @@ function triggerUpdate(msg) {
 "[project]/pages/index.js [client] (ecmascript)", ((__turbopack_context__) => {
 "use strict";
 
+// web/pages/index.js
 __turbopack_context__.s([
     "__N_SSP",
     ()=>__N_SSP,
@@ -475,71 +476,130 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$index$2e$js__$5b$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/react/index.js [client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$link$2e$js__$5b$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/link.js [client] (ecmascript)");
 ;
+var _s = __turbopack_context__.k.signature();
 ;
 ;
 var __N_SSP = true;
-function Home({ articles, degraded }) {
+function Home({ ssrArticles = [], ssrDegraded = false }) {
+    _s();
+    const [articles, setArticles] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$index$2e$js__$5b$client$5d$__$28$ecmascript$29$__["useState"])(ssrArticles);
+    const [degraded, setDegraded] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$index$2e$js__$5b$client$5d$__$28$ecmascript$29$__["useState"])(ssrDegraded);
+    const [loading, setLoading] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$index$2e$js__$5b$client$5d$__$28$ecmascript$29$__["useState"])(false);
+    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$index$2e$js__$5b$client$5d$__$28$ecmascript$29$__["useEffect"])({
+        "Home.useEffect": ()=>{
+            if (degraded && articles.length === 0) {
+                // try client fetch to recover
+                ({
+                    "Home.useEffect": async ()=>{
+                        setLoading(true);
+                        try {
+                            const r = await fetch(`/api/v1/articles?page=1&limit=10`);
+                            if (r.ok) {
+                                const data = await r.json();
+                                if (data && data.value) setArticles(data.value);
+                                setDegraded(false);
+                            }
+                        } catch (e) {
+                        // still degraded
+                        } finally{
+                            setLoading(false);
+                        }
+                    }
+                })["Home.useEffect"]();
+            }
+        }
+    }["Home.useEffect"], [
+        degraded,
+        articles.length
+    ]);
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+        style: {
+            padding: 24
+        },
         children: [
-            degraded && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                style: {
-                    color: 'orange'
-                },
-                children: "数据暂不可用，页面已降级"
-            }, void 0, false, {
-                fileName: "[project]/pages/index.js",
-                lineNumber: 18,
-                columnNumber: 26
-            }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h1", {
                 children: "文章列表"
             }, void 0, false, {
                 fileName: "[project]/pages/index.js",
-                lineNumber: 19,
+                lineNumber: 33,
                 columnNumber: 13
             }, this),
+            degraded && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                style: {
+                    color: 'orange'
+                },
+                children: "服务器负载/数据不可用，已降级 — 正在尝试恢复..."
+            }, void 0, false, {
+                fileName: "[project]/pages/index.js",
+                lineNumber: 34,
+                columnNumber: 26
+            }, this),
+            loading && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                children: "加载中..."
+            }, void 0, false, {
+                fileName: "[project]/pages/index.js",
+                lineNumber: 35,
+                columnNumber: 25
+            }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("ul", {
-                children: articles && articles.map((a)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("li", {
+                children: articles.length === 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("li", {
+                    children: "暂无文章"
+                }, void 0, false, {
+                    fileName: "[project]/pages/index.js",
+                    lineNumber: 38,
+                    columnNumber: 21
+                }, this) : articles.map((a)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("li", {
+                        style: {
+                            marginBottom: 12
+                        },
                         children: [
-                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h2", {
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
                                 children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$link$2e$js__$5b$client$5d$__$28$ecmascript$29$__["default"], {
                                     href: `/articles/${a.id}`,
-                                    children: a.title
+                                    legacyBehavior: true,
+                                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("a", {
+                                        children: a.title
+                                    }, void 0, false, {
+                                        fileName: "[project]/pages/index.js",
+                                        lineNumber: 42,
+                                        columnNumber: 81
+                                    }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/pages/index.js",
-                                    lineNumber: 23,
-                                    columnNumber: 29
+                                    lineNumber: 42,
+                                    columnNumber: 33
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/pages/index.js",
-                                lineNumber: 23,
-                                columnNumber: 25
+                                lineNumber: 42,
+                                columnNumber: 29
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                 children: a.summary
                             }, void 0, false, {
                                 fileName: "[project]/pages/index.js",
-                                lineNumber: 24,
-                                columnNumber: 25
+                                lineNumber: 43,
+                                columnNumber: 29
                             }, this)
                         ]
                     }, a.id, true, {
                         fileName: "[project]/pages/index.js",
-                        lineNumber: 22,
-                        columnNumber: 21
+                        lineNumber: 41,
+                        columnNumber: 25
                     }, this))
             }, void 0, false, {
                 fileName: "[project]/pages/index.js",
-                lineNumber: 20,
+                lineNumber: 36,
                 columnNumber: 13
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/pages/index.js",
-        lineNumber: 17,
+        lineNumber: 32,
         columnNumber: 9
     }, this);
 }
+_s(Home, "69oVhGA98plq1XOPiAeC0BOOSWM=");
 _c = Home;
 var _c;
 __turbopack_context__.k.register(_c, "Home");

@@ -1,11 +1,12 @@
 __turbopack_load_page_chunks__("/articles/[id]", [
-  "static/chunks/node_modules_next_dist_compiled_8ca6b690._.js",
-  "static/chunks/node_modules_next_dist_shared_lib_82dc2e9d._.js",
-  "static/chunks/node_modules_next_dist_client_d0aa886c._.js",
-  "static/chunks/node_modules_next_dist_6024eba3._.js",
-  "static/chunks/node_modules_react-dom_4411d9bd._.js",
-  "static/chunks/node_modules_f1be3ba2._.js",
-  "static/chunks/[root-of-the-server]__fa016d5e._.js",
-  "static/chunks/pages_articles_[id]_2da965e7.js",
-  "static/chunks/turbopack-pages_articles_[id]_bd88672f.js"
+  "static/chunks/2374f_next_dist_compiled_d59e6dfa._.js",
+  "static/chunks/2374f_next_dist_shared_lib_2ff5430c._.js",
+  "static/chunks/2374f_next_dist_client_4104177a._.js",
+  "static/chunks/2374f_next_dist_94a4a07f._.js",
+  "static/chunks/2374f_next_16039d01._.js",
+  "static/chunks/2374f_react-dom_d61e6ed4._.js",
+  "static/chunks/2374f_86556852._.js",
+  "static/chunks/[root-of-the-server]__5f311d08._.js",
+  "static/chunks/web_pages_articles_[id]_2da965e7.js",
+  "static/chunks/turbopack-web_pages_articles_[id]_33c4d6f2.js"
 ])

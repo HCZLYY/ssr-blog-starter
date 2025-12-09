@@ -1,0 +1,26 @@
+<div>
+    <% articles.forEach(a=> { %>
+        <div class="article-item">
+            <a href="/articles/<%= a.id %>">
+                <%= a.title %>
+            </a>
+            <div>
+                <%= a.createdAt.toLocaleString() %>
+            </div>
+        </div>
+        <% }) %>
+</div>
+
+<div class="pagination">
+    <% for (let p=1; p <=totalPages; p++) { %>
+        <% if (p===currentPage) { %>
+            <span class="active-page">
+                <%= p %>
+            </span>
+            <% } else { %>
+                <a href="?page=<%= p %>&keyword=<%= keyword %>" data-page="<%= p %>">
+                    <%= p %>
+                </a>
+                <% } %>
+                    <% } %>
+</div>

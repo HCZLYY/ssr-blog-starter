@@ -1,0 +1,101 @@
+<!-- server/views/articles.ejs -->
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>文章列表</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            padding: 18px
+        }
+
+        .article {
+            border-bottom: 1px solid #eee;
+            padding: 12px 0
+        }
+
+        .controls {
+            margin-bottom: 12px
+        }
+    </style>
+</head>
+
+<body>
+    <h1>文章列表（SSR 示例）</h1>
+
+    <div class="controls">
+        <input id="kw" type="text" placeholder="搜索关键词" />
+        <button id="btnSearch">搜索</button>
+        <span id="loginStatus" style="float:right"></span>
+    </div>
+
+    <div id="list">
+        <!-- 服务器渲染内容会放这里（如果有） -->
+        <% if (Array.isArray(articles) && articles.length) { %>
+            <% articles.forEach(function(a){ %>
+                <div class="article">
+                    <h3><a href="/articles/<%= a.id %>">
+                            <%= a.title %>
+                        </a></h3>
+                    <p>
+                        <%= a.summary || (a.content && a.content.slice(0,120)) || '' %>
+                    </p>
+                </div>
+                <% }) %>
+                    <% } else { %>
+                        <p>暂无文章</p>
+                        <% } %>
+    </div>
+
+    <script>
+        (function () {
+            const ADMIN_API = '/api/v1/admin';
+            const loginStatus = document.getElementById('loginStatus');
+            const kw = document.getElementById('kw');
+            const btnSearch = document.getElementById('btnSearch');
+
+            async function checkLogin() {
+                try {
+                    const r = await fetch(ADMIN_API + '/me', { credentials: 'include' });
+                    if (!r.ok) throw r;
+                    const j = await r.json();
+                    loginStatus.textContent = '已登录：' + j.username;
+                } catch (e) {
+                    loginStatus.textContent = '未登录';
+                }
+            }
+
+            btnSearch.addEventListener('click', async () => {
+                const q = kw.value.trim();
+                const url = '/api/v1/articles?page=1&limit=5' + (q ? '&keyword=' + encodeURIComponent(q) : '');
+                try {
+                    const r = await fetch(url, { credentials: 'include' });
+                    const j = await r.json();
+                    // 简单局部更新 list（只示例）
+                    const list = document.getElementById('list');
+                    if (!Array.isArray(j.value) || j.value.length === 0) {
+                        list.innerHTML = '<p>暂无文章</p>';
+                        return;
+                    }
+                    list.innerHTML = j.value.map(a => `
+          <div class="article">
+            <h3><a href="/articles/${a.id}">${a.title}</a></h3>
+            <p>${(a.summary || a.content || '').slice(0, 140)}</p>
+          </div>
+        `).join('');
+                } catch (err) {
+                    console.error(err);
+                    alert('搜索失败');
+                }
+            });
+
+            // 初次检查登录状态
+            checkLogin();
+        })();
+    </script>
+</body>
+
+</html>

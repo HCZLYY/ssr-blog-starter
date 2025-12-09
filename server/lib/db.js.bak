@@ -1,0 +1,96 @@
+﻿// server/lib/db.js
+'use strict';
+
+const mysql = require('mysql2/promise');
+const path = require('path');
+
+// load .env already handled by server startup; but keep config from env
+const DB_HOST = process.env.DB_HOST || '127.0.0.1';
+const DB_PORT = Number(process.env.DB_PORT || process.env.DB_PORT || 6606);
+const DB_USER = process.env.DB_USER || process.env.DB_USER || 'ssr_user';
+const DB_PASSWORD = process.env.DB_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASSWORD || 'password';
+const DB_NAME = process.env.DB_NAME || process.env.DB_NAME || process.env.DB_NAME || 'ssr_blog';
+
+const pool = mysql.createPool({
+    host: DB_HOST,
+    port: DB_PORT,
+    user: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    // namedPlaceholders: true // do not enable unless code uses named placeholders
+});
+
+function isIntegerLike(v) {
+    if (typeof v === 'number') return Number.isFinite(v);
+    if (typeof v === 'string') {
+        // allow numeric string
+        return v.trim() !== '' && /^-?\d+$/.test(v.trim());
+    }
+    return false;
+}
+
+/**
+ * execute(sql, params)
+ * - keep signature stable for code calling db.execute(...)
+ * - special-case: prepared LIMIT placeholders: "LIMIT ? OFFSET ?" or "LIMIT ? , ?" are problematic
+ *   in some mysql2/mysql server combinations; when we detect those patterns and first two params
+ *   are integer-like, interpolate them as numbers into SQL and remove them from params to avoid
+ *   the prepared execution issue.
+ */
+async function execute(sql, params = []) {
+    // defensive copy
+    let finalSql = sql;
+    let finalParams = Array.isArray(params) ? params.slice() : [];
+
+    try {
+        // Normalize whitespace for pattern detection (we only check)
+        const sqlLower = finalSql.toLowerCase();
+
+        // Pattern 1: "limit ? offset ?" or "limit ?  offset  ?"
+        // Pattern 2: "limit ? , ?" (old style)
+        const limitOffsetRegex = /limit\s*\?\s*offset\s*\?/i;
+        const limitCommaRegex = /limit\s*\?\s*,\s*\?/i;
+
+        if ((limitOffsetRegex.test(finalSql) || limitCommaRegex.test(finalSql)) && finalParams.length >= 2) {
+            // Check first two params are integer-like
+            if (isIntegerLike(finalParams[0]) && isIntegerLike(finalParams[1])) {
+                // Safe numeric interpolation (make sure to coerce to integer)
+                const a = parseInt(finalParams[0], 10);
+                const b = parseInt(finalParams[1], 10);
+
+                if (limitOffsetRegex.test(finalSql)) {
+                    // replace the first occurrence of "LIMIT ? OFFSET ?" with numeric values
+                    finalSql = finalSql.replace(limitOffsetRegex, `LIMIT ${a} OFFSET ${b}`);
+                } else {
+                    // replace "LIMIT ? , ?" with "LIMIT a, b"
+                    finalSql = finalSql.replace(limitCommaRegex, `LIMIT ${a}, ${b}`);
+                }
+
+                // Remove first two params (we consumed them)
+                finalParams = finalParams.slice(2);
+            }
+        }
+
+        // Now execute with pool; this will either use placeholders for remaining params, or fully-interpolated SQL
+        const result = await pool.execute(finalSql, finalParams);
+        return result;
+    } catch (err) {
+        // bubble up but keep error informative
+        console.error('[lib/db] SQL execute error ->', {
+            message: err && err.message,
+            stack: err && err.stack,
+            sql: finalSql,
+            params: finalParams
+        });
+        throw err;
+    }
+}
+
+module.exports = {
+    execute,
+    // also export pool in case other modules need it
+    pool
+};

@@ -1,0 +1,216 @@
+﻿// server/routes/articles.js
+const express = require('express');
+const router = express.Router();
+const db = require('../services/db');
+const { client: redisClient, connect: redisConnect } = require('../services/redisClient');
+
+// NOTE: Redlock / distributed lock intentionally disabled for local/dev environment.
+// If you want to enable it later, restore a guarded initialization here.
+const redlock = null;
+
+// rate limiter (optional usage in admin route if needed)
+const rateLimit = require('express-rate-limit');
+
+const DEFAULT_LIST_TTL = 60;   // seconds
+const DEFAULT_DETAIL_TTL = 300; // seconds
+
+function listKey(page = 1, limit = 10, sort = 'id_desc') {
+    return `articles:list:page:${page}:limit:${limit}:sort:${sort}`;
+}
+function detailKey(id) {
+    return `articles:detail:${id}`;
+}
+
+// ensure redis connected (best-effort)
+(async () => {
+    try { await redisConnect(); } catch (e) { console.warn('redisConnect failed in articles route (ignored):', e && e.message); }
+})();
+
+// safe JSON parse helper
+function safeJSONParse(s) {
+    try { return JSON.parse(s); } catch (e) { return null; }
+}
+
+// helper: invalidate all list keys
+async function invalidateListKeys() {
+    if (!redisClient || !redisClient.isOpen) return;
+    try {
+        for await (const k of redisClient.scanIterator({ MATCH: 'articles:list:*', COUNT: 100 })) {
+            await redisClient.del(k);
+        }
+    } catch (e) {
+        console.warn('Redis invalidateListKeys error', e && e.message);
+    }
+}
+
+// GET list (paginated)
+router.get('/', async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const offset = (page - 1) * limit;
+    const key = listKey(page, limit);
+
+    // try read from redis cache
+    try {
+        if (redisClient && redisClient.isOpen) {
+            const cached = await redisClient.get(key);
+            if (cached) {
+                res.locals.cacheHit = true;
+                const parsed = safeJSONParse(cached);
+                if (parsed) return res.json(parsed);
+                // fallthrough if parse failed
+            }
+        }
+    } catch (e) {
+        console.warn('Redis get error (list):', e && e.message);
+    }
+
+    // read from db
+    try {
+        const [rows] = await db.query(
+            'SELECT id, title, summary, author_id, created_at FROM articles WHERE status="published" AND (deleted_at IS NULL) ORDER BY id DESC LIMIT ? OFFSET ?',
+            [limit, offset]
+        );
+        const [countRows] = await db.query('SELECT COUNT(*) as cnt FROM articles WHERE status="published" AND (deleted_at IS NULL)');
+        const result = { value: rows, Count: countRows[0].cnt, page, limit };
+
+        // cache result (best-effort)
+        try {
+            if (redisClient && redisClient.isOpen) {
+                await redisClient.setEx(key, DEFAULT_LIST_TTL, JSON.stringify(result));
+            }
+        } catch (e) {
+            console.warn('Redis set error (list):', e && e.message);
+        }
+
+        return res.json(result);
+    } catch (err) {
+        console.error('DB error (list)', err);
+        return res.status(500).json({ error: 'internal' });
+    }
+});
+
+// GET detail
+router.get('/:id', async (req, res) => {
+    const id = parseInt(req.params.id);
+    const key = detailKey(id);
+
+    // try cached detail
+    try {
+        if (redisClient && redisClient.isOpen) {
+            const cached = await redisClient.get(key);
+            if (cached) {
+                res.locals.cacheHit = true;
+                const parsed = safeJSONParse(cached);
+                if (parsed) return res.json(parsed);
+                // fallthrough if parse failed
+            }
+        }
+    } catch (e) {
+        console.warn('Redis get error (detail):', e && e.message);
+    }
+
+    try {
+        const [rows] = await db.query('SELECT * FROM articles WHERE id = ? AND (deleted_at IS NULL)', [id]);
+        if (!rows || rows.length === 0) return res.status(404).json({ error: 'not found' });
+        const article = rows[0];
+
+        // store into redis (best-effort)
+        try {
+            if (redisClient && redisClient.isOpen) {
+                await redisClient.setEx(key, DEFAULT_DETAIL_TTL, JSON.stringify(article));
+            }
+        } catch (e) {
+            console.warn('Redis set error (detail):', e && e.message);
+        }
+
+        return res.json(article);
+    } catch (err) {
+        console.error('DB error (detail)', err);
+        return res.status(500).json({ error: 'internal' });
+    }
+});
+
+// POST create article
+router.post('/', async (req, res) => {
+    const { title, summary, content, status = 'draft', tags } = req.body;
+    const author_id = req.body.author_id || 1;
+
+    if (!title || !content) return res.status(400).json({ error: 'title and content required' });
+
+    try {
+        const [result] = await db.query('INSERT INTO articles (author_id, title, summary, content, status) VALUES (?, ?, ?, ?, ?)', [author_id, title, summary, content, status]);
+        const id = result.insertId;
+
+        // invalidate list caches (scan & del)
+        try { await invalidateListKeys(); } catch (e) { console.warn('invalidateListKeys inner err', e && e.message); }
+
+        // pre-set detail cache for new article
+        try {
+            if (redisClient && redisClient.isOpen) {
+                const [rows] = await db.query('SELECT * FROM articles WHERE id = ?', [id]);
+                if (rows && rows[0]) await redisClient.setEx(detailKey(id), DEFAULT_DETAIL_TTL, JSON.stringify(rows[0]));
+            }
+        } catch (e) {
+            console.warn('Redis set detail after insert', e && e.message);
+        }
+
+        return res.status(201).json({ id, author_id, title, summary, content, status });
+    } catch (err) {
+        console.error('DB error (create)', err);
+        return res.status(500).json({ error: 'internal' });
+    }
+});
+
+// PUT update
+router.put('/:id', async (req, res) => {
+    const id = parseInt(req.params.id);
+    const { title, summary, content, status } = req.body;
+
+    try {
+        await db.query('UPDATE articles SET title = ?, summary = ?, content = ?, status = ? WHERE id = ?', [title, summary, content, status, id]);
+
+        // invalidate caches: detail + list
+        try {
+            if (redisClient && redisClient.isOpen) {
+                await redisClient.del(detailKey(id));
+            }
+            await invalidateListKeys();
+        } catch (e) { console.warn('Redis invalidate on update error', e && e.message); }
+
+        const [rows] = await db.query('SELECT * FROM articles WHERE id = ?', [id]);
+        return res.json(rows[0]);
+    } catch (err) {
+        console.error('DB error (update)', err);
+        return res.status(500).json({ error: 'internal' });
+    }
+});
+
+// DELETE (physical or logical)
+router.delete('/:id', async (req, res) => {
+    const id = parseInt(req.params.id);
+    const physical = req.query.physical === '1';
+
+    try {
+        if (physical) {
+            await db.query('DELETE FROM articles WHERE id = ?', [id]);
+        } else {
+            await db.query('UPDATE articles SET deleted_at = NOW(), status = "deleted" WHERE id = ?', [id]);
+        }
+
+        // invalidate caches
+        try {
+            if (redisClient && redisClient.isOpen) {
+                await redisClient.del(detailKey(id));
+            }
+            await invalidateListKeys();
+        } catch (e) { console.warn('Redis invalidate on delete error', e && e.message); }
+
+        return res.json({ ok: true });
+    } catch (err) {
+        console.error('DB error (delete)', err);
+        return res.status(500).json({ error: 'internal' });
+    }
+});
+
+module.exports = router;
