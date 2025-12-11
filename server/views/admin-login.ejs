@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>后台登录 - 科技与数码博客</title>
+    <link rel="stylesheet" href="/admin.css" />
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #7f7e84, #7e8494);
+            font-family: 'Segoe UI', 'PingFang SC', sans-serif;
+        }
+
+        .login-panel {
+            background: #fff;
+            border-radius: 18px;
+            padding: 36px;
+            width: min(420px, 90vw);
+            box-shadow: 0 25px 80px rgba(15, 23, 42, 0.35);
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 1.8rem;
+            color: #111827;
+        }
+
+        p {
+            margin: 0 0 24px;
+            color: #4b5563;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #1f2937;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #cbd5f5;
+            margin-bottom: 16px;
+            font-size: 1rem;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 12px;
+            background: #2563eb;
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        .error {
+            color: #dc2626;
+            min-height: 20px;
+            margin-bottom: 8px;
+        }
+
+        .login-meta {
+            margin-top: 16px;
+            text-align: center;
+        }
+
+        .login-meta a {
+            color: #2563eb;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-panel">
+        <h1>后台登录</h1>
+        <p>请输入管理员账号后访问文章管理页。</p>
+        <form id="admin-login-form">
+            <label for="username">用户名</label>
+            <input id="username" name="username" type="text" autocomplete="username" value="<%= typeof adminUser !== 'undefined' ? adminUser : '' %>" />
+
+            <label for="password">密码</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" />
+
+            <div id="login-error" class="error"></div>
+
+            <button type="submit" id="login-submit">登录后台</button>
+        </form>
+        <div class="login-meta">
+            <a href="/">返回博客首页</a>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const form = document.getElementById('admin-login-form');
+            const errorNode = document.getElementById('login-error');
+            const submitBtn = document.getElementById('login-submit');
+
+            try { localStorage.removeItem('admin_token'); } catch (err) { }
+            fetch('/api/v1/admin/logout', { method: 'POST', credentials: 'include' }).catch(() => { });
+
+            function showError(msg) {
+                if (errorNode) errorNode.textContent = msg || '';
+            }
+
+            if (!form) return;
+            form.addEventListener('submit', async (evt) => {
+                evt.preventDefault();
+                const username = (form.username.value || '').trim();
+                const password = form.password.value || '';
+                if (!username || !password) {
+                    showError('请填写用户名和密码');
+                    return;
+                }
+                submitBtn.disabled = true;
+                submitBtn.textContent = '登录中…';
+                showError('');
+                try {
+                    const res = await fetch('/api/v1/admin/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ username, password })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                        throw new Error(data?.error || '登录失败');
+                    }
+                    if (data?.token) {
+                        localStorage.setItem('admin_token', data.token);
+                    }
+                    window.location.href = '/admin/articles';
+                } catch (err) {
+                    console.error('[admin-login] login failed', err);
+                    showError(err.message || '登录失败，请重试');
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '登录后台';
+                }
+            });
+        })();
+    </script>
+</body>
+
+</html>
